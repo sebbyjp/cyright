@@ -154,6 +154,20 @@ export class ImportResolver {
         execEnv: ExecutionEnvironment,
         moduleDescriptor: ImportedModuleDescriptor
     ): ImportResult {
+        // Debug: Log Cython imports - commented out to reduce noise
+        // if (moduleDescriptor.isCython || moduleDescriptor.nameParts.some(part => part === 'libc')) {
+        //     const importName = moduleDescriptor.nameParts.join('.');
+        //     const debugMsg = `[CYTHON DEBUG] Resolving import: ${importName} from ${sourceFilePath}, isCython=${moduleDescriptor.isCython}\n`;
+        //     console.log(debugMsg);
+        //     // Also write to a debug file
+        //     try {
+        //         const fs = require('fs');
+        //         const debugFile = '/tmp/cython_debug.log';
+        //         fs.appendFileSync(debugFile, new Date().toISOString() + ' ' + debugMsg);
+        //     } catch (e) {
+        //         // Ignore file write errors
+        //     }
+        // }
         // Wrap internal call to _resolveImport() to prevent calling any
         // child class version of resolveImport().
         return this._resolveImport(sourceFilePath, execEnv, moduleDescriptor);
@@ -970,6 +984,11 @@ export class ImportResolver {
             importFailureInfo.push(`Attempting to resolve stub package using root path '${rootPath}'`);
         } else {
             importFailureInfo.push(`Attempting to resolve using root path '${rootPath}'`);
+        }
+        
+        // Debug logging for libc imports
+        if (moduleDescriptor.nameParts.some(part => part === 'libc')) {
+            console.log(`[CYTHON DEBUG] _resolveAbsoluteImport: rootPath=${rootPath}, nameParts=${moduleDescriptor.nameParts.join('.')}, isCython=${moduleDescriptor.isCython}`);
         }
 
         // Starting at the specified path, walk the file system to find the

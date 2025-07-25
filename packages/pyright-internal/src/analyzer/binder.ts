@@ -1927,6 +1927,14 @@ export class Binder extends ParseTreeWalker {
 
                     symbol.addDeclaration(aliasDecl);
                     this._createFlowAssignment(importSymbolNode.alias || importSymbolNode.name);
+                    
+                    // Debug Cython imports - commented out to reduce noise
+                    // if (node.isCython) {
+                    //     console.log(`[CYTHON DEBUG] Creating alias for cimport: ${importedName}`);
+                    //     console.log(`  - resolvedPath: ${resolvedPath}`);
+                    //     console.log(`  - loadSymbolsFromPath: ${aliasDecl.loadSymbolsFromPath}`);
+                    //     console.log(`  - symbolName: ${aliasDecl.symbolName}`);
+                    // }
 
                     if (isTypingImport) {
                         if (typingSymbolsOfInterest.some((s) => s === importSymbolNode.name.value)) {
@@ -2544,7 +2552,11 @@ export class Binder extends ParseTreeWalker {
                 type: DeclarationType.Alias,
                 node,
                 path: pathOfLastSubmodule,
-                loadSymbolsFromPath: false,
+                // If we're in a Cython file, always load symbols from the resolved
+                // path so we can pick up accompanying `.pxd` or `.pyi` stubs even
+                // for regular `import` statements (e.g. `import numpy`).
+                // Fall back to the original check for non-Cython files.
+                loadSymbolsFromPath: (this._fileInfo.filePath.endsWith('.pyx') || node.isCython) ? true : false,
                 range: getEmptyRange(),
                 usesLocalName: !!importAlias,
                 moduleName: importInfo.importName,

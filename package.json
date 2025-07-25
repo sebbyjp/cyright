@@ -2,7 +2,6 @@
     "name": "pyright-root",
     "private": true,
     "scripts": {
-        "postinstall": "npm run bootstrap",
         "bootstrap": "node ./build/skipBootstrap.js || lerna bootstrap",
         "clean": "lerna run --no-bail --stream clean",
         "install:all": "npm install && lerna exec --no-bail npm install",
@@ -25,6 +24,7 @@
         "@types/yargs": "^16.0.4",
         "@typescript-eslint/eslint-plugin": "^5.32.0",
         "@typescript-eslint/parser": "^5.32.0",
+        "dedent": "^0.7.0",
         "detect-indent": "^6.1.0",
         "eslint": "^8.21.0",
         "eslint-config-prettier": "^8.5.0",
@@ -38,5 +38,8 @@
         "syncpack": "^5.8.15",
         "typescript": "~4.4.4",
         "yargs": "^16.2.0"
+    },
+    "dependencies": {
+        "copy-webpack-plugin": "^10.2.4"
     }
 }

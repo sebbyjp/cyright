@@ -682,6 +682,9 @@ export class AnalyzerService {
             configJsonObj = this._parsePyprojectTomlFile(pyprojectFilePath);
         }
 
+        // Store the config directory even if no config object was parsed
+        const configFileDir = this._configFilePath ? getDirectoryPath(this._configFilePath) : projectRoot;
+
         if (configJsonObj) {
             configOptions.initializeFromJson(
                 configJsonObj,
@@ -692,26 +695,25 @@ export class AnalyzerService {
                 commandLineOptions.diagnosticSeverityOverrides,
                 commandLineOptions.fileSpecs.length > 0
             );
+        }
 
-            const configFileDir = getDirectoryPath(this._configFilePath!);
+        // If no include paths were provided, assume that all files within
+        // the project should be included. Do this regardless of whether
+        // we found a config object.
+        if (configOptions.include.length === 0) {
+            this._console.info(`No include entries specified; assuming ${configFileDir}`);
+            configOptions.include.push(getFileSpec(this.fs, configFileDir, '.'));
+        }
 
-            // If no include paths were provided, assume that all files within
-            // the project should be included.
-            if (configOptions.include.length === 0) {
-                this._console.info(`No include entries specified; assuming ${configFileDir}`);
-                configOptions.include.push(getFileSpec(this.fs, configFileDir, '.'));
-            }
+        // If there was no explicit set of excludes, add a few common ones to avoid long scan times.
+        if (configJsonObj && configOptions.exclude.length === 0) {
+            defaultExcludes.forEach((exclude) => {
+                this._console.info(`Auto-excluding ${exclude}`);
+                configOptions.exclude.push(getFileSpec(this.fs, configFileDir, exclude));
+            });
 
-            // If there was no explicit set of excludes, add a few common ones to avoid long scan times.
-            if (configOptions.exclude.length === 0) {
-                defaultExcludes.forEach((exclude) => {
-                    this._console.info(`Auto-excluding ${exclude}`);
-                    configOptions.exclude.push(getFileSpec(this.fs, configFileDir, exclude));
-                });
-
-                if (configOptions.autoExcludeVenv === undefined) {
-                    configOptions.autoExcludeVenv = true;
-                }
+            if (configOptions.autoExcludeVenv === undefined) {
+                configOptions.autoExcludeVenv = true;
             }
         } else {
             configOptions.autoExcludeVenv = true;
@@ -1041,7 +1043,8 @@ export class AnalyzerService {
             }
 
             // ! Cython
-            this._console.error(`Pyproject file "${pyprojectPath}" is missing "[tool.cyright]" section.`);
+            // Don't error out - just return undefined and let default includes be used
+            // this._console.error(`Pyproject file "${pyprojectPath}" is missing "[tool.cyright]" section.`);
             return undefined;
         });
     }

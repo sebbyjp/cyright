@@ -109,7 +109,7 @@ import {
 } from './codeFlowTypes';
 import { assignTypeToTypeVar, populateTypeVarContextBasedOnExpectedType } from './constraintSolver';
 import { applyConstructorTransform } from './constructorTransform';
-import { isCythonBuiltIn, isCythonFunction, transformCythonToPython } from './cythonTransform';
+import { isCythonBuiltIn, isCythonFunction, transformCythonToPython, validFromPythonTypeMap } from './cythonTransform';
 import {
     applyDataClassClassBehaviorOverrides,
     applyDataClassDecorator,
@@ -4068,6 +4068,11 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
                     !!effectiveType && isInstantiableClass(effectiveType) && ClassType.isSpecialBuiltIn(effectiveType);
 
                 type = effectiveType;
+                
+                // Debug logging for pointer types
+                if (isClassInstance(type) && type.cythonDetails?.isPointer) {
+                    console.log(`[getTypeOfName] Name '${name}' has pointer type: ${type.details.name}* (ptrRefCount=${type.cythonDetails.ptrRefCount})`);
+                }
 
                 // ! Cython: Experimental allow python and cython imports of the same name
                 let isModuleUnion = false;
@@ -5202,6 +5207,30 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
         flags: MemberAccessFlags,
         bindToType?: ClassType | TypeVarType
     ): ClassMemberLookup | undefined {
+        // Handle Cython-specific members
+        if (classType.cythonDetails && memberName === 'decode') {
+            // char and char* types have decode method
+            if (classType.details.name === 'char') {
+                // Create a decode method that returns str
+                const strClass = evaluatorInterface.getBuiltInType(errorNode, 'str');
+                if (strClass && isClass(strClass)) {
+                    const decodeMethod = FunctionType.createSynthesizedInstance('decode', FunctionTypeFlags.SynthesizedMethod);
+                    decodeMethod.details.parameters = [];
+                    decodeMethod.details.declaredReturnType = ClassType.cloneAsInstance(strClass);
+                    
+                    return {
+                        classType,
+                        isClassMember: !isAccessedThroughObject,
+                        isTypeIncomplete: false,
+                        symbol: Symbol.createWithType(SymbolFlags.ClassMember, decodeMethod),
+                        isClassVar: false,
+                        type: decodeMethod,
+                        isAsymmetricDescriptor: false
+                    };
+                }
+            }
+        }
+        
         let classLookupFlags = ClassMemberLookupFlags.Default;
         if (flags & MemberAccessFlags.AccessClassMembersOnly) {
             classLookupFlags |= ClassMemberLookupFlags.SkipInstanceVariables;
@@ -6585,6 +6614,26 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
             const typeFromTypedDict = getTypeOfIndexedTypedDict(evaluatorInterface, node, baseType, usage);
             if (typeFromTypedDict) {
                 return typeFromTypedDict;
+            }
+        }
+
+        // ! Cython - Handle pointer indexing (dereferencing)
+        if (isClassInstance(baseType) && baseType.cythonDetails?.isPointer && baseType.cythonDetails.ptrRefCount > 0) {
+            console.log(`[getTypeOfIndexedObjectOrClass] Handling pointer indexing for ${baseType.details.name}* (ptrRefCount=${baseType.cythonDetails.ptrRefCount})`);
+            if (usage.method === 'get') {
+                // Create a dereferenced type
+                const derefType = TypeBase.cloneType(baseType);
+                derefType.cythonDetails = { ...baseType.cythonDetails };
+                derefType.cythonDetails.ptrRefCount--;
+                if (derefType.cythonDetails.ptrRefCount === 0) {
+                    derefType.cythonDetails.isPointer = false;
+                }
+                console.log(`[getTypeOfIndexedObjectOrClass] Dereferenced to ${derefType.details.name}${derefType.cythonDetails.isPointer ? '*' : ''} (ptrRefCount=${derefType.cythonDetails.ptrRefCount})`);
+                return { type: derefType };
+            } else if (usage.method === 'set') {
+                // For set operations, we just need to validate it's allowed
+                // The actual type checking happens elsewhere
+                return { type: baseType };
             }
         }
 
@@ -11347,6 +11396,22 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
             isIncomplete = true;
         }
 
+        // Cython fused-type arithmetic: allow operations like `numeric + numeric` where both operands
+        // are the exact same fused type. Treat the result as that fused type and suppress unsupported-operator errors.
+        if (
+            node.operator === OperatorType.Add &&
+            isClass(leftType) &&
+            isClass(rightType) &&
+            leftType.details.structType === CStructType.Fused &&
+            rightType.details.structType === CStructType.Fused &&
+            ClassType.isSameGenericClass(leftType, rightType)
+        ) {
+            return {
+                type: leftType,
+                isIncomplete,
+            };
+        }
+
         // Is this a "|" operator used in a context where it is supposed to be
         // interpreted as a union operator?
         if (
@@ -11420,6 +11485,19 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
 
         const diag = new DiagnosticAddendum();
 
+        // ! Cython - check Cython operations first
+        const fileInfo = AnalyzerNodeInfo.getFileInfo(node);
+        if (fileInfo.filePath.endsWith('.pyx') || fileInfo.filePath.endsWith('.pxd')) {
+            // console.log('Early Cython check in getTypeOfBinaryOperationExpression');
+            const cythonType = validateBinaryOperationCython(node, leftType, rightType, UnknownType.create());
+            if (!isUnknown(cythonType)) {
+                // Cython handled this operation successfully
+                // console.log('Early Cython check returned:', cythonType.category);
+                return { type: cythonType, isIncomplete };
+            }
+            // console.log('Early Cython check returned unknown, falling through');
+        }
+
         // Don't use literal math if either of the operand types are
         // incomplete because we may be evaluating types within a loop,
         // so the literal values may change each time.
@@ -11436,8 +11514,6 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
 
         if (!diag.isEmpty() || !type) {
             if (!isIncomplete) {
-                const fileInfo = AnalyzerNodeInfo.getFileInfo(node);
-
                 if (isLeftOptionalType && diag.getMessages().length === 1) {
                     // If the left was an optional type and there is just one diagnostic,
                     // assume that it was due to a "None" not being supported. Report
@@ -11467,9 +11543,6 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
 
             type = UnknownType.create();
         }
-
-        // ! Cython
-        type = validateBinaryOperationCython(node, leftType, rightType, type);
 
         return { type, isIncomplete };
     }
@@ -19318,11 +19391,30 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
             importLookup: ImportLookup
         ): Type {
             if (loaderActions.path && loaderActions.loadSymbolsFromPath) {
+                // Debug logging for module symbol loading
+                const isCythonContext = loaderActions.path.endsWith('.pyx') || loaderActions.path.endsWith('.pxd');
+                if (isCythonContext || moduleType.moduleName.includes('numpy') || moduleType.moduleName.includes('mbcore')) {
+                    console.log(`[CYTHON DEBUG] Loading module symbols for: ${moduleType.moduleName}`);
+                    console.log(`  - loaderActions.path: ${loaderActions.path}`);
+                    console.log(`  - isCythonContext: ${isCythonContext}`);
+                }
+                
                 const lookupResults = importLookup(loaderActions.path);
                 if (lookupResults) {
                     moduleType.fields = lookupResults.symbolTable;
                     moduleType.docString = lookupResults.docString;
+                    
+                    if (isCythonContext || moduleType.moduleName.includes('numpy') || moduleType.moduleName.includes('mbcore')) {
+                        console.log(`  - Loaded ${lookupResults.symbolTable.size} symbols`);
+                        if (lookupResults.symbolTable.size < 20) {
+                            const symbols = Array.from(lookupResults.symbolTable.keys());
+                            console.log(`  - Symbols: ${symbols.join(', ')}`);
+                        }
+                    }
                 } else {
+                    if (isCythonContext || moduleType.moduleName.includes('numpy') || moduleType.moduleName.includes('mbcore')) {
+                        console.log(`  - No lookup results found!`);
+                    }
                     return evaluatorOptions.evaluateUnknownImportsAsAny ? AnyType.create() : UnknownType.create();
                 }
             }
@@ -19859,6 +19951,11 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
                     try {
                         const type = getTypeForDeclaration(decl);
 
+                        // Debug logging for pointer types
+                        if (type && isClassInstance(type) && type.cythonDetails?.isPointer) {
+                            console.log(`[getDeclaredTypeOfSymbol] Symbol has pointer type: ${type.details.name}* (ptrRefCount=${type.cythonDetails.ptrRefCount})`);
+                        }
+
                         // If there was recursion detected, don't use this declaration.
                         // The exception is it's a class declaration because getTypeOfClass
                         // handles recursion by populating a partially-created class type
@@ -20236,6 +20333,54 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
         // emitting false positives.
         if (ClassType.isHierarchyPartiallyEvaluated(destType) || ClassType.isHierarchyPartiallyEvaluated(srcType)) {
             return true;
+        }
+
+        // Cython numeric conversions (Python built-ins → C numeric types)
+        if (srcType.details.moduleName === 'builtins') {
+            const allowed = validFromPythonTypeMap.get(srcType.details.name);
+            if (allowed && allowed.includes(destType.details.name)) {
+                return true;
+            }
+            
+            // Special handling for literal values
+            if (srcType.literalValue !== undefined) {
+                // Literal[0] or Literal[1] can be assigned to bint
+                if (destType.details.name === 'bint' && ClassType.isBuiltIn(srcType, 'int')) {
+                    if (srcType.literalValue === 0 || srcType.literalValue === 1) {
+                        return true;
+                    }
+                }
+                
+                // Any int literal can be assigned to numeric C types
+                if (ClassType.isBuiltIn(srcType, 'int')) {
+                    const numericCTypes = ['size_t', 'Py_ssize_t', 'unsigned char', 'unsigned int', 
+                                          'unsigned long', 'long long', 'unsigned long long', 
+                                          'int8_t', 'int16_t', 'int32_t', 'int64_t',
+                                          'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t'];
+                    if (numericCTypes.includes(destType.details.name)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        // Cython pointer compatibility
+        if (destType.cythonDetails?.isPointer && srcType.cythonDetails?.isPointer) {
+            // void* is compatible with any pointer type
+            if (destType.details.name === 'void' || srcType.details.name === 'void') {
+                return true;
+            }
+            
+            // char* is compatible with void*
+            if ((destType.details.name === 'char' && srcType.details.name === 'void') ||
+                (destType.details.name === 'void' && srcType.details.name === 'char')) {
+                return true;
+            }
+            
+            // const char* is compatible with char*
+            if (destType.details.name === 'char' && srcType.details.name === 'char') {
+                return true;
+            }
         }
 
         // Handle typed dicts. They also use a form of structural typing for type
@@ -24359,6 +24504,52 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
         }
         const typeResult = getTypeOfExpression(node.typeTrailNode?.postMemberNode ?? node.expression, flags);
         let type = TypeBase.cloneForCType(node, typeResult.type);
+
+    // If the alias could not be resolved (Unknown) but the token matches a known numeric C type,
+    // fall back to the built-in 'int' instance so that it is not flagged as undefined.
+    const numericCTypesList = ['size_t', 'Py_ssize_t', 'unsigned char', 'unsigned int', 
+                              'unsigned long', 'long long', 'unsigned long long', 
+                              'int8_t', 'int16_t', 'int32_t', 'int64_t',
+                              'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t'];
+    if (isUnknown(type)) {
+        const expr = node.expression;
+        if (expr && expr.nodeType === ParseNodeType.Name) {
+            const typeName = (expr as NameNode).value;
+            if (numericCTypesList.includes(typeName)) {
+                // Treat it as the builtin 'int' for analysis purposes.
+                type = getBuiltInObject(expr, 'int');
+            }
+        }
+    }
+        
+        // Debug logging for pointer type issues
+        const ptrRefCount = CTypeNode.ptrRefCount(node);
+        if (ptrRefCount > 0 && isClassInstance(type)) {
+            console.log(`[CType Debug] Processing pointer type: ${type.details.name}, ptrRefCount=${ptrRefCount}`);
+        }
+        
+        // Ensure numeric types with pointers are properly typed
+        if (isClassInstance(type)) {
+            const numericCTypes = ['size_t', 'Py_ssize_t', 'unsigned char', 'unsigned int', 
+                                  'unsigned long', 'long long', 'unsigned long long', 
+                                  'int8_t', 'int16_t', 'int32_t', 'int64_t',
+                                  'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t'];
+            if (numericCTypes.includes(type.details.name) && !type.cythonDetails) {
+                // This is a bare numeric type that needs Cython details from the node
+                console.log(`[CType Debug] Adding pointer details to ${type.details.name}: ptrRefCount=${ptrRefCount}`);
+                type.cythonDetails = {
+                    isPointer: CTypeNode.isPointer(node),
+                    ptrRefCount: CTypeNode.ptrRefCount(node),
+                    isConst: CTypeNode.isConstant(node),
+                    isVolatile: CTypeNode.isVolatile(node),
+                    isPublic: CTypeNode.isPublic(node),
+                    isReadOnly: CTypeNode.isReadOnly(node),
+                    numMods: CTypeNode.numModifiers(node),
+                    trailType: CTypeNode.trailType(node),
+                };
+            }
+        }
+        
         type = narrowTypeTrailNode(node, type);
         typeResult.type = type;
         return typeResult;
@@ -24973,6 +25164,36 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
         // const rightClass = isClassInstance(rightType) ? (rightType as ClassType) : undefined;
         const expectedClass = isClassInstance(expectedType) ? (expectedType as ClassType) : undefined;
 
+        // Handle NULL comparisons (NULL == pointer, pointer == NULL, pointer is NULL, pointer is not NULL)
+        if (
+            (node.operator === OperatorType.Equals || 
+             node.operator === OperatorType.NotEquals ||
+             node.operator === OperatorType.Is ||
+             node.operator === OperatorType.IsNot) &&
+            (fileInfo.filePath.endsWith('.pyx') || fileInfo.filePath.endsWith('.pxd'))
+        ) {
+            // Check if one side is NULL and the other is a pointer
+            const leftIsNull = leftType.category === TypeCategory.Null;
+            const rightIsNull = rightType.category === TypeCategory.Null;
+            const leftIsPointer = isPointer(leftType);
+            const rightIsPointer = isPointer(rightType);
+            
+            // Also check for void* type
+            const leftIsVoidPtr = isClassInstance(leftType) && 
+                leftType.details.name === 'void' && 
+                leftType.cythonDetails?.isPointer;
+            const rightIsVoidPtr = isClassInstance(rightType) && 
+                rightType.details.name === 'void' && 
+                rightType.cythonDetails?.isPointer;
+
+            if ((leftIsNull && (rightIsPointer || rightIsVoidPtr)) || 
+                ((leftIsPointer || leftIsVoidPtr) && rightIsNull)) {
+                // This is a valid NULL pointer comparison, return bool
+                console.log('Returning bool for NULL comparison');
+                return getBuiltInObject(node, 'bool');
+            }
+        }
+
         if (leftClass && expectedClass) {
             // Handle operations on pointers
             if (expectedClass && leftClass && isPointer(leftClass)) {
@@ -25268,11 +25489,19 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
             // This could be a private symbol
             // Cython allows 'private' cdef declarations to be visible externally with no name mangling
             // TODO: Only allow for this use case for now but it should be all cdef symbols
-            const importLookup = fileInfo.importLookup(fileInfo.filePath.replace('.pyx', '.pxd'), '.pxd');
+            // Properly replace only the file extension
+            const pxdPath = fileInfo.filePath.endsWith('.pyx') 
+                ? fileInfo.filePath.slice(0, -4) + '.pxd' 
+                : fileInfo.filePath;
+            const importLookup = fileInfo.importLookup(pxdPath, '.pxd');
             symbol = importLookup?.symbolTable.get(node.name.value);
             const decls = symbol?.getDeclarations() ?? [];
             if (decls.length) {
-                pxdDecl = decls[decls.length - 1];
+                // Only assign if it's an alias declaration
+                const lastDecl = decls[decls.length - 1];
+                if (lastDecl.type === DeclarationType.Alias) {
+                    pxdDecl = lastDecl;
+                }
             }
         }
         const pyxDecl = AnalyzerNodeInfo.getDeclaration(node);
@@ -25637,23 +25866,23 @@ export function createTypeEvaluator(importLookup: ImportLookup, evaluatorOptions
         verifyTypeArgumentsAssignable,
         inferReturnTypeIfNecessary,
         inferTypeParameterVarianceForClass,
-        addError,
-        addWarning,
-        addInformation,
-        addUnusedCode,
-        addUnreachableCode,
-        addDeprecated,
-        addDiagnostic,
-        addDiagnosticForTextRange,
-        printType,
-        printFunctionParts,
-        getTypeCacheEntryCount,
-        disposeEvaluator,
-        useSpeculativeMode,
-        setTypeForNode,
-        checkForCancellation,
+        addError: addError,
+        addWarning: addWarning,
+        addInformation: addInformation,
+        addUnusedCode: addUnusedCode,
+        addUnreachableCode: addUnreachableCode,
+        addDeprecated: addDeprecated,
+        addDiagnostic: addDiagnostic,
+        addDiagnosticForTextRange: addDiagnosticForTextRange,
+        printType: printType,
+        printFunctionParts: printFunctionParts,
+        getTypeCacheEntryCount: getTypeCacheEntryCount,
+        disposeEvaluator: disposeEvaluator,
+        useSpeculativeMode: useSpeculativeMode,
+        setTypeForNode: setTypeForNode,
+        checkForCancellation: checkForCancellation,
         // ! Cython
-        getTypeOfCythonNode,
+        getTypeOfCythonNode: getTypeOfCythonNode,
     };
 
     const codeFlowEngine = getCodeFlowEngine(evaluatorInterface, speculativeTypeTracker);

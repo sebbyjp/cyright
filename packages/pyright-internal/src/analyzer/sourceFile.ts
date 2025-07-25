@@ -1460,8 +1460,13 @@ export class SourceFile {
         const ext = getFileExtension(this._filePath);
         if (ext === '.pyx') {
             const filename = stripFileExtension(getFileName(this._filePath));
+            console.log(`[CYTHON DEBUG] .pyx file ${this._filePath}, looking for matching .pxd: ${filename}.pxd`);
             const matchingPxdImport = Parser.getMatchingDeclarationImport(filename);
             const pxdImportResult = importResolver.resolveImport(this._filePath, execEnv, matchingPxdImport.import);
+            console.log(`[CYTHON DEBUG] .pxd import result:`);
+            console.log(`  - isImportFound: ${pxdImportResult.isImportFound}`);
+            console.log(`  - isNativeLib: ${pxdImportResult.isNativeLib}`);
+            console.log(`  - resolvedPaths: ${pxdImportResult.resolvedPaths}`);
             if (pxdImportResult.isImportFound && !pxdImportResult.isNativeLib) {
                 imports.unshift(pxdImportResult);
                 AnalyzerNodeInfo.setImportInfo(matchingPxdImport.import.nameNode, pxdImportResult);

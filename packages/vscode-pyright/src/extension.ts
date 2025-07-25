@@ -45,6 +45,7 @@ import { extractPathFromUri } from 'pyright-internal/common/pathUtils';
 import { activateCythonDebug } from '../../vscode-cython-debug/src/activate';
 import { FileBasedCancellationStrategy } from './cancellationUtils';
 import { CythonServices } from './cythonServices';
+import { registerCompileDiagnostics } from './compileDiagnostics';
 
 let cancellationStrategy: FileBasedCancellationStrategy | undefined;
 
@@ -274,8 +275,11 @@ export async function activate(context: ExtensionContext) {
     });
 
     // ! Cython
-    activateCythonDebug(context, cythonServices.debugFactory, cythonServices.debugConfigProvider);
+    // activateCythonDebug(context, outputChannel, disposables);
     await client.start();
+
+    // Register live compile diagnostics (Cython -> red squiggles from compiler)
+    registerCompileDiagnostics(context);
 }
 
 export function deactivate() {

@@ -4,6 +4,15 @@
  * Implements pyright language server.
  */
 
+// Debug: Log immediately on module load
+try {
+    const fs = require('fs');
+    const debugFile = '/tmp/cython_debug.log';
+    fs.appendFileSync(debugFile, new Date().toISOString() + ' [CYTHON DEBUG] server.ts module loaded\n');
+} catch (e) {
+    // Ignore
+}
+
 import {
     CancellationToken,
     CodeAction,
@@ -33,7 +42,11 @@ import { Host } from './common/host';
 import { resolvePaths } from './common/pathUtils';
 import { ProgressReporter } from './common/progressReporter';
 import { createFromRealFileSystem, WorkspaceFileWatcherProvider } from './common/realFileSystem';
-import { LanguageServerBase, ServerSettings, WorkspaceServiceInstance } from './languageServerBase';
+import {
+    LanguageServerBase,
+    ServerSettings,
+    WorkspaceServiceInstance,
+} from './languageServerBase';
 import { CodeActionProvider } from './languageService/codeActionProvider';
 import { WorkspaceMap } from './workspaceMap';
 
@@ -58,6 +71,18 @@ export class PyrightServer extends LanguageServerBase {
         const rootDirectory = (global as any).__rootDirectory || __dirname;
 
         const console = new ConsoleWithLogLevel(connection.console);
+        console.log('[CYTHON DEBUG] Starting Cython Language Server with debug logging enabled');
+        console.log(`[CYTHON DEBUG] Version: ${version}`);
+        
+        // Also write startup to debug file
+        try {
+            const fs = require('fs');
+            const debugFile = '/tmp/cython_debug.log';
+            fs.writeFileSync(debugFile, new Date().toISOString() + ' [CYTHON DEBUG] Server started, version: ' + version + '\n');
+        } catch (e) {
+            // Ignore file write errors
+        }
+        
         const workspaceMap = new WorkspaceMap();
         const fileWatcherProvider = new WorkspaceFileWatcherProvider();
         const fileSystem = createFromRealFileSystem(console, fileWatcherProvider);
@@ -216,6 +241,14 @@ export class PyrightServer extends LanguageServerBase {
             if (cythonSection) {
                 const cythonIncludes: string[] = cythonSection.includePaths;
                 const cythonPaths: string[] = [];
+                if (cythonSection.evaluateUnknownImportsAsAny !== undefined) {
+                    serverSettings.evaluateUnknownImportsAsAny = cythonSection.evaluateUnknownImportsAsAny;
+                    this.console.info('Cython evaluateUnknownImportsAsAny: ' + serverSettings.evaluateUnknownImportsAsAny);
+                } else {
+                    // Default to false for Cython to show error diagnostics
+                    serverSettings.evaluateUnknownImportsAsAny = false;
+                    this.console.info('Cython evaluateUnknownImportsAsAny defaulted to false');
+                }
                 if (Array.isArray(cythonIncludes)) {
                     cythonIncludes.forEach((cythonPath) => {
                         const resolvedPath = resolvePaths(

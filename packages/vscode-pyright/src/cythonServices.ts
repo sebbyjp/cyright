@@ -32,8 +32,10 @@ export class CythonServices {
 
     updatePythonPath(outputChannel: OutputChannel, path?: string) {
         this.statusBar.update(path);
-        this.compiler.setPythonPath(path);
-        this.installer.onPythonPathUpdate(path);
-        this.debugConfigProvider.setPythonPath(path);
+        if (path) {
+            this.compiler.setPythonPath(path);
+            this.installer.onPythonPathUpdate(path);
+            this.debugConfigProvider.setPythonPath(path);
+        }
     }
 }

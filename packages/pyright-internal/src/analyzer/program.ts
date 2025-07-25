@@ -1018,6 +1018,14 @@ export class Program {
 
         if (typeof filePathOrModule === 'string') {
             sourceFileInfo = this._getSourceFileInfoFromPath(filePathOrModule);
+
+            // ! Cython
+            // If the path refers to a real file that isn't yet part of the program, add
+            // it so that symbol tables (e.g. from .pxd files) can be loaded on demand.
+            if (!sourceFileInfo && isFile(this._fs, filePathOrModule)) {
+                this.addTrackedFile(filePathOrModule);
+                sourceFileInfo = this._getSourceFileInfoFromPath(filePathOrModule);
+            }
         } else {
             // Resolve the import.
             const importResult = this._importResolver.resolveImport(
