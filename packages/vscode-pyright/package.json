@@ -1,14 +1,14 @@
 {
     "name": "vscode-pyright",
-    "displayName": "Pyright",
-    "description": "VS Code static type checking for Python",
+    "displayName": "Cython Language Support (Pyright Fork)",
+    "description": "Cython language support with enhanced type checking based on Pyright",
     "version": "1.1.270",
     "private": true,
     "license": "MIT",
     "author": {
         "name": "Microsoft Corporation"
     },
-    "publisher": "ms-pyright",
+    "publisher": "cython-community",
     "repository": {
         "type": "git",
         "url": "https://github.com/Microsoft/pyright"
@@ -24,7 +24,12 @@
     ],
     "activationEvents": [
         "onLanguage:python",
-        "workspaceContains:pyrightconfig.json"
+        "onLanguage:cython",
+        "workspaceContains:pyrightconfig.json",
+        "onCommand:cython.runCurrentFile",
+        "onCommand:cython.restartserver",
+        "onCommand:cython.compileCurrentFile",
+        "onCommand:cython.createCythonTypeStub"
     ],
     "icon": "images/pyright-icon.png",
     "main": "./dist/extension.js",
@@ -39,6 +44,25 @@
                     ".py",
                     ".pyi"
                 ]
+            },
+            {
+                "id": "cython",
+                "aliases": [
+                    "Cython"
+                ],
+                "extensions": [
+                    ".pyx",
+                    ".pxd",
+                    ".pxi"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "cython",
+                "scopeName": "source.cython",
+                "path": "./syntaxes/cython.tmLanguage"
             }
         ],
         "commands": [
@@ -51,6 +75,26 @@
                 "command": "pyright.restartserver",
                 "title": "Restart Server",
                 "category": "Pyright"
+            },
+            {
+                "command": "cython.restartserver",
+                "title": "Restart Language Server",
+                "category": "Cython"
+            },
+            {
+                "command": "cython.compileCurrentFile",
+                "title": "Compile Cython File",
+                "category": "Cython"
+            },
+            {
+                "command": "cython.createCythonTypeStub",
+                "title": "Create Cython TypeStub for Python",
+                "category": "Cython"
+            },
+            {
+                "command": "cython.runCurrentFile",
+                "title": "Run Cython File",
+                "category": "Cython"
             }
         ],
         "menus": {
@@ -59,7 +103,38 @@
                     "command": "pyright.organizeimports",
                     "title": "Pyright: Organize Imports",
                     "group": "Pyright",
-                    "when": "editorLangId == python"
+                    "when": "editorLangId == python || editorLangId == cython"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "cython.compileCurrentFile",
+                    "when": "editorLangId == cython && resourceExtname == .pyx"
+                },
+                {
+                    "command": "cython.runCurrentFile",
+                    "when": "editorLangId == cython && resourceExtname == .pyx"
+                },
+                {
+                    "command": "cython.createCythonTypeStub",
+                    "when": "editorLangId == cython && resourceExtname == .pyx"
+                }
+            ],
+            "explorer/context": [
+                {
+                    "command": "cython.compileCurrentFile",
+                    "group": "Cython",
+                    "when": "resourceLangId == cython && resourceExtname == .pyx"
+                },
+                {
+                    "command": "cython.createCythonTypeStub",
+                    "group": "Cython",
+                    "when": "resourceLangId == cython && resourceExtname == .pyx"
+                },
+                {
+                    "command": "cython.runCurrentFile",
+                    "group": "Cython",
+                    "when": "resourceLangId == cython && resourceExtname == .pyx"
                 }
             ]
         },
@@ -833,6 +908,33 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Disables the “Organize Imports” command.",
+                    "scope": "resource"
+                },
+                "cython.includePaths": {
+                    "type": "array",
+                    "default": [],
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Paths to include for analysis. (Out-of-tree paths)",
+                    "scope": "resource"
+                },
+                "cython.evaluateUnknownImportsAsAny": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, unknown imports will be evaluated as 'Any' type. When false, they will show error diagnostics.",
+                    "scope": "resource"
+                },
+                "cython.suppressPythonDiagnostics": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Suppress diagnostics for Python files while still analyzing them for Cython type checking.",
+                    "scope": "resource"
+                },
+                "cython.showCompileDiagnostics": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, runs 'cython --fast-fail' on save and shows compiler errors as red squiggles.",
                     "scope": "resource"
                 },
                 "python.pythonPath": {
