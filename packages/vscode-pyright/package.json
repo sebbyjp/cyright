@@ -65,6 +65,16 @@
                 "path": "./syntaxes/cython.tmLanguage"
             }
         ],
+        "semanticTokenScopes": [
+            {
+                "language": "cython",
+                "scopes": {
+                    "keyword.modification": [
+                        "storage.type.declaration.cython"
+                    ]
+                }
+            }
+        ],
         "commands": [
             {
                 "command": "pyright.organizeimports",
