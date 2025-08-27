@@ -14,7 +14,7 @@
         "url": "https://github.com/Microsoft/pyright"
     },
     "engines": {
-        "vscode": "^1.67.0"
+        "vscode": "^1.75.0"
     },
     "keywords": [
         "python"
@@ -23,13 +23,7 @@
         "Programming Languages"
     ],
     "activationEvents": [
-        "onLanguage:python",
-        "onLanguage:cython",
-        "workspaceContains:pyrightconfig.json",
-        "onCommand:cython.runCurrentFile",
-        "onCommand:cython.restartserver",
-        "onCommand:cython.compileCurrentFile",
-        "onCommand:cython.createCythonTypeStub"
+        "workspaceContains:pyrightconfig.json"
     ],
     "icon": "images/pyright-icon.png",
     "main": "./dist/extension.js",
