@@ -42,10 +42,11 @@ import { Commands } from 'pyright-internal/commands/commands';
 import { isThenable } from 'pyright-internal/common/core';
 import { extractPathFromUri } from 'pyright-internal/common/pathUtils';
 
-import { activateCythonDebug } from '../../vscode-cython-debug/src/activate';
+
 import { FileBasedCancellationStrategy } from './cancellationUtils';
 import { CythonServices } from './cythonServices';
 import { registerCompileDiagnostics } from './compileDiagnostics';
+import { runCurrentFile } from './runFile';
 
 let cancellationStrategy: FileBasedCancellationStrategy | undefined;
 
@@ -73,8 +74,7 @@ export async function activate(context: ExtensionContext) {
 
     cancellationStrategy = new FileBasedCancellationStrategy();
 
-    // const bundlePath = context.asAbsolutePath(path.join('dist', 'server.js'));
-    const bundlePath = context.asAbsolutePath(path.join('cyright', 'packages', 'vscode-pyright', 'dist', 'server.js'));
+    const bundlePath = context.asAbsolutePath(path.join('dist', 'server.js'));
     const runOptions = { execArgv: [`--max-old-space-size=${defaultHeapSize}`] };
     const debugOptions = { execArgv: ['--nolazy', '--inspect=9600', `--max-old-space-size=${defaultHeapSize}`] };
 
@@ -101,7 +101,7 @@ export async function activate(context: ExtensionContext) {
 
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
-        // Register the server for python source files.
+        // Register the server for cython source files only.
         documentSelector: [
             {
                 language: 'cython',
@@ -219,6 +219,10 @@ export async function activate(context: ExtensionContext) {
             });
     };
     context.subscriptions.push(
+        commands.registerCommand('cython.runCurrentFile', (...args: any[]) => {
+            // Run current cython file via our helper
+            runCurrentFile();
+        }),
         commands.registerCommand(Commands.compileCurrentFile, (...args: any[]) => {
             const filePath = cythonCommandGetPath(...args);
             if (filePath) {
