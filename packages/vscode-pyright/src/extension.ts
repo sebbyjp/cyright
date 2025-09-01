@@ -42,10 +42,9 @@ import { Commands } from 'pyright-internal/commands/commands';
 import { isThenable } from 'pyright-internal/common/core';
 import { extractPathFromUri } from 'pyright-internal/common/pathUtils';
 
-
 import { FileBasedCancellationStrategy } from './cancellationUtils';
-import { CythonServices } from './cythonServices';
 import { registerCompileDiagnostics } from './compileDiagnostics';
+import { CythonServices } from './cythonServices';
 import { runCurrentFile } from './runFile';
 
 let cancellationStrategy: FileBasedCancellationStrategy | undefined;

@@ -1,5 +1,5 @@
 {
-    "name": "pyright-root",
+    "name": "vscode-pyright",
     "private": true,
     "scripts": {
         "bootstrap": "node ./build/skipBootstrap.js || lerna bootstrap",

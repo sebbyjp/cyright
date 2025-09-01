@@ -4,12 +4,11 @@
 
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
-const { cacheConfig, monorepoResourceNameMapper, tsconfigResolveAliases } = require('../../build/lib/webpack');
 
 const outPath = path.resolve(__dirname, 'dist');
 const typeshedFallback = path.resolve(__dirname, '..', 'pyright-internal', 'typeshed-fallback');
 
-/**@type {(env: any, argv: { mode: 'production' | 'development' | 'none' }) => import('webpack').Configuration}*/
+/**@type {(env: any, argv: { mode: 'production' | 'development' | 'none' }) => import('../../node_modules/webpack').Configuration}*/
 module.exports = (_, { mode }) => {
     return {
         context: __dirname,
@@ -21,8 +20,7 @@ module.exports = (_, { mode }) => {
             filename: '[name].js',
             path: outPath,
             libraryTarget: 'commonjs2',
-            devtoolModuleFilenameTemplate:
-                mode === 'development' ? '../[resource-path]' : monorepoResourceNameMapper('vscode-pyright'),
+            devtoolModuleFilenameTemplate: '../[resource-path]',
         },
         devtool: mode === 'development' ? 'source-map' : 'nosources-source-map',
         stats: {
@@ -32,7 +30,6 @@ module.exports = (_, { mode }) => {
         },
         resolve: {
             extensions: ['.ts', '.js'],
-            alias: tsconfigResolveAliases('tsconfig.json'),
         },
         externals: {
             vscode: 'commonjs vscode',
@@ -51,11 +48,9 @@ module.exports = (_, { mode }) => {
         },
         plugins: [
             new CopyPlugin({
-                patterns: [
-                    { from: typeshedFallback, to: 'typeshed-fallback' },
-                ],
+                patterns: [{ from: typeshedFallback, to: 'typeshed-fallback' }],
             }),
         ],
-        cache: mode === 'development' ? cacheConfig(__dirname, __filename) : false,
+        cache: false,
     };
 };

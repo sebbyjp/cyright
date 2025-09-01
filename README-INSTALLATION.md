@@ -35,46 +35,6 @@ The built extension will be located in `packages/vscode-pyright/dist/`.
 
 ## Installation Methods
 
-### Method 1: Direct Installation in Windsurf
-
-This is the recommended method for Windsurf users who want a permanent installation.
-
-1. Build the extension (see above)
-
-2. Install (or reinstall) the published Cython extension if it is missing:
-   ```bash
-   windsurf --install-extension ktnrg45.vscode-cython@1.0.11  # or use the Extensions UI
-   ```
-   The extension will appear under `~/.windsurf/extensions/ktnrg45.vscode-cython-1.0.11`.
-
-3. Copy **only** the built JavaScript files into the extension’s `dist` folder (this preserves all the built-in typeshed files):
-```bash
-# Remove old files and copy new server files
-rm -f ~/.windsurf/extensions/codeium.windsurfpyright-1.28.0-universal/dist/server.js
-rm -f "$EXT_DIR"/dist/server.js.map
-cp packages/vscode-pyright/dist/server.js "$EXT_DIR"/dist/
-cp packages/vscode-pyright/dist/server.js.map "$EXT_DIR"/dist/
-
-# Remove old files and copy new extension files
-rm -f ~/.windsurf/extensions/codeium.windsurfpyright-1.28.0-universal/dist/extension.js
-rm -f "$EXT_DIR"/dist/extension.js.map
-cp packages/vscode-pyright/dist/extension.js "$EXT_DIR"/dist/
-cp packages/vscode-pyright/dist/extension.js.map "$EXT_DIR"/dist/
-```
-
-4. Create symlink for server path (required for Windsurf):
-```bash
-# Create directory structure
-mkdir -p "$EXT_DIR"/cyright/packages/vscode-pyright
-
-# Create symlink to dist
-ln -sf ../../../dist "$EXT_DIR"/cyright/packages/vscode-pyright/dist
-```
-
-5. Restart Windsurf or reload the window (Cmd+R on macOS, Ctrl+R on Windows/Linux)
-
-**Important**: Do NOT delete or replace the entire dist directory as this will break Python builtins and typeshed files.
-
 ### Method 2: Development Mode (VS Code)
 
 For development and testing, you can run the extension in a new VS Code window:

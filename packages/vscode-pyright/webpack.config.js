@@ -23,7 +23,7 @@ const destGdb = 'lib';
 const destPython = path.join(destGdb, 'python');
 const destCygdb = path.join(destPython, 'cygdb');
 
-/**@type {(env: any, argv: { mode: 'production' | 'development' | 'none' }) => import('webpack').Configuration}*/
+/**@type {(env: any, argv: { mode: 'production' | 'development' | 'none' }) => import('../../node_modules/webpack').Configuration}*/
 module.exports = (_, { mode }) => {
     return {
         context: __dirname,
@@ -49,9 +49,10 @@ module.exports = (_, { mode }) => {
             timings: true,
         },
         resolve: {
-            extensions: ['.ts', '.js'],
+            extensions: ['.ts', '.js', '.json'],
             alias: {
-                'pyright-internal': path.resolve(__dirname, '..', 'pyright-internal', 'src')
+                'pyright-internal': path.resolve(__dirname, '..', 'pyright-internal', 'src'),
+                '../../../../package.json': path.resolve(__dirname, 'package.json')
             }
         },
         externals: {
@@ -73,10 +74,11 @@ module.exports = (_, { mode }) => {
             new CopyPlugin({
                 patterns: [
                     { from: typeshedFallback, to: 'typeshed-fallback' },
-                    { from: libGdb, to: destGdb },
-                    { from: libCython, to: path.join(destCygdb, 'libcython.py') },
-                    { from: libPython, to: path.join(destCygdb, 'libpython.py') },
-                    { from: gdb, to: path.join(destPython, 'gdb') },
+                    // Make debug assets optional; skip if not present
+                    { from: libGdb, to: destGdb, noErrorOnMissing: true },
+                    { from: libCython, to: path.join(destCygdb, 'libcython.py'), noErrorOnMissing: true },
+                    { from: libPython, to: path.join(destCygdb, 'libpython.py'), noErrorOnMissing: true },
+                    { from: gdb, to: path.join(destPython, 'gdb'), noErrorOnMissing: true },
                 ],
             }),
         ],

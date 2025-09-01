@@ -1,16 +1,16 @@
-import {
-    workspace,
-    languages,
-    ExtensionContext,
-    DiagnosticCollection,
-    Diagnostic,
-    DiagnosticSeverity,
-    Range,
-    Position,
-    TextDocument,
-} from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
+import {
+    Diagnostic,
+    DiagnosticCollection,
+    DiagnosticSeverity,
+    ExtensionContext,
+    languages,
+    Position,
+    Range,
+    TextDocument,
+    workspace,
+} from 'vscode';
 
 /**
  * Registers live "cython --fast-fail" compile diagnostics. Whenever the user saves (or opens)

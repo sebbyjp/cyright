@@ -5,7 +5,8 @@
 
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
-const { cacheConfig, monorepoResourceNameMapper, tsconfigResolveAliases } = require('../../build/lib/webpack');
+const webpack = require('webpack');
+// Standalone build: avoid monorepo webpack helpers
 
 const outPath = path.resolve(__dirname, 'dist');
 const typeshedFallback = path.resolve(__dirname, '..', 'pyright-internal', 'typeshed-fallback');
@@ -22,12 +23,11 @@ module.exports = (_, { mode }) => {
         output: {
             filename: '[name].js',
             path: outPath,
-            devtoolModuleFilenameTemplate:
-                mode === 'development' ? '../[resource-path]' : monorepoResourceNameMapper('pyright'),
+            devtoolModuleFilenameTemplate: '../[resource-path]',
             clean: true,
         },
         devtool: mode === 'development' ? 'source-map' : 'nosources-source-map',
-        cache: mode === 'development' ? cacheConfig(__dirname, __filename) : false,
+        cache: false,
         stats: {
             all: false,
             errors: true,
@@ -36,8 +36,11 @@ module.exports = (_, { mode }) => {
             timings: true,
         },
         resolve: {
-            extensions: ['.ts', '.js'],
-            alias: tsconfigResolveAliases('tsconfig.json'),
+            extensions: ['.ts', '.js', '.json'],
+            alias: {
+                'pyright-internal': path.resolve(__dirname, '..', 'pyright-internal', 'src'),
+                '../../../../package.json': path.resolve(__dirname, '..', '..', 'package.json'),
+            },
         },
         externals: {
             fsevents: 'commonjs2 fsevents',
@@ -63,7 +66,14 @@ module.exports = (_, { mode }) => {
                 },
             ],
         },
-        plugins: [new CopyPlugin({ patterns: [{ from: typeshedFallback, to: 'typeshed-fallback' }] })],
+        plugins: [
+            new CopyPlugin({ patterns: [{ from: typeshedFallback, to: 'typeshed-fallback' }] }),
+            // Map pyright-internal's '../../../../package.json' to this package's package.json
+            new webpack.NormalModuleReplacementPlugin(
+                /^\.\.\/\.\.\/\.\.\/package\.json$/,
+                path.resolve(__dirname, 'package.json')
+            ),
+        ],
         optimization: {
             splitChunks: {
                 cacheGroups: {

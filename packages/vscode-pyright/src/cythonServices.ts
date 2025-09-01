@@ -1,9 +1,9 @@
 import { ExtensionContext, OutputChannel } from 'vscode';
 import { LanguageClient } from 'vscode-languageclient/node';
 
-import { CythonDebugConfigurationProvider } from '../../vscode-cython-debug/src/config';
-import { CythonDebugAdapterFactory } from '../../vscode-cython-debug/src/factory';
 import { CythonCompiler } from './compiler';
+import { CythonDebugConfigurationProvider } from './debug/config';
+import { CythonDebugAdapterFactory } from './debug/factory';
 import { Installer } from './installer';
 import { SemanticTokenProvider } from './semanticTokens';
 import { StatusBar } from './statusBar';
