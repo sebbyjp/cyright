@@ -1,8 +1,10 @@
 // Compiler command
 import { exec } from 'child_process';
-import { ExtensionContext, OutputChannel, ProgressLocation, window } from 'vscode';
+import { ExtensionContext, OutputChannel, ProgressLocation, window, workspace, Uri } from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 
-import { combinePaths, getDirectoryPath } from 'pyright-internal/common/pathUtils';
+// (no pathUtils usage here)
 
 class ProgressReporter {
     outputChannel: OutputChannel;
@@ -36,11 +38,114 @@ class ProgressReporter {
     }
 }
 
+function stripTomlComments(line: string): string {
+    let inStr = false;
+    let quote: string | null = null;
+    let outS = '';
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (!inStr && ch === '#') break;
+        if (!inStr && (ch === '"' || ch === "'")) {
+            inStr = true;
+            quote = ch;
+            outS += ch;
+            continue;
+        }
+        if (inStr && ch === quote) {
+            inStr = false;
+            quote = null;
+            outS += ch;
+            continue;
+        }
+        outS += ch;
+    }
+    return outS.trim();
+}
+
+function parseCyrightCompileArgs(raw: string): string[] | undefined {
+    const lines = String(raw).split(/\r?\n/);
+    let inCyright = false;
+    for (const rawLine of lines) {
+        const line = stripTomlComments(rawLine);
+        if (!line) continue;
+        if (/^\s*\[\s*tool\.cyright\s*\]/.test(line)) {
+            inCyright = true;
+            continue;
+        }
+        if (/^\s*\[.*\]/.test(line)) {
+            inCyright = false;
+        }
+        if (!inCyright) continue;
+        const m = line.match(/^compileArgs\s*=\s*(.+)$/);
+        if (!m) continue;
+        const val = m[1].trim();
+        if (val.startsWith('[') && val.endsWith(']')) {
+            const inner = val.slice(1, -1).trim();
+            if (!inner) return [];
+            const parts: string[] = [];
+            let acc = '';
+            let inStr2 = false;
+            let q: string | null = null;
+            for (let i = 0; i < inner.length; i++) {
+                const ch = inner[i];
+                if (!inStr2 && ch === ',') {
+                    parts.push(acc.trim());
+                    acc = '';
+                    continue;
+                }
+                if (!inStr2 && (ch === '"' || ch === "'")) {
+                    inStr2 = true;
+                    q = ch;
+                    acc += ch;
+                    continue;
+                }
+                if (inStr2 && ch === q) {
+                    inStr2 = false;
+                    q = null;
+                    acc += ch;
+                    continue;
+                }
+                acc += ch;
+            }
+            if (acc.trim()) parts.push(acc.trim());
+            return parts.map((p) => {
+                const s = p.trim();
+                if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1);
+                return s;
+            });
+        }
+    }
+    return undefined;
+}
+
+function getCompileArgsForFile(filename: string): string[] {
+    try {
+        const folder = workspace.getWorkspaceFolder(Uri.file(filename));
+        if (folder) {
+            const pyproject = path.join(folder.uri.fsPath, 'pyproject.toml');
+            const raw = fs.readFileSync(pyproject, 'utf8');
+            const parsed = parseCyrightCompileArgs(raw);
+            if (parsed) {
+                const arr = parsed.slice();
+                if (!arr.includes('-i')) arr.push('-i');
+                return arr;
+            }
+        }
+    } catch {
+        // ignore
+    }
+    return ['-i', '-3'];
+}
+
 function _compile(filename: string, pythonPath: string, reporter: ProgressReporter, callback: () => void) {
-    const path = combinePaths(getDirectoryPath(pythonPath), 'cythonize');
-    const args = ['-i', '-f'];
-    const cmd = [path, ...args];
-    cmd.push(filename);
+    const args = getCompileArgsForFile(filename);
+    const cmd = [
+        JSON.stringify(pythonPath),
+        '-m',
+        'Cython.Build.Cythonize',
+        ...args,
+        JSON.stringify(filename),
+    ];
     const command = cmd.join(' ');
 
     reporter.outputChannel.appendLine(reporter.starting());
